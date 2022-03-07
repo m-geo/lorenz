@@ -1,0 +1,1 @@
+![maxima plot](./plots/first_max_graph.png)

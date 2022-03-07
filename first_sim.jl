@@ -40,8 +40,13 @@ Plots.plot(X,Y)
 Plots.plot(Z)
 
 
-function get_maxima(ls)
+function get_maxima(ls; add_min=false)
     maxs = Float64[]
+    if add_min
+        mins = Float64[]
+        if ls[1]<ls[2]
+            push!(mins,ls[1])
+    end
     if ls[1]>ls[2]
         push!(maxs,ls[1])
     end
@@ -49,22 +54,37 @@ function get_maxima(ls)
         if ls[i-1]<ls[i]>ls[i+1]
             push!(maxs,ls[i])
         end
+        if add_min
+            if ls[i-1]>ls[i]<ls[i+1]
+                push!(mins,ls[i])
+            end
+        end
     end
     if ls[end]>ls[end-1]
         push!(maxs,ls[end])
     end
-    return maxs
+    if add_min
+        if ls[end]<ls[end-1]
+        push!(mins,ls[end])
+    end
+    if not add_min
+        return maxs
+    else
+        return maxs, mins
+    end
   end
 
+# get subsequent maxima plot
 z_max = get_maxima(Z)
 z_plot = Tuple{Float64, Float64}[]
 for i=1:length(z_max)-1
     push!(z_plot,(z_max[i], z_max[i+1]))
 end
-
 i1 = [x[1] for x in z_plot]
 i2 = [x[2] for x in z_plot]
 Plots.plot(i1,i2)
+
+#
 
 
 #=
