@@ -43,6 +43,6 @@ for frame in frames
     notify.((points, colors))
     l.colorrange = (0, frame)
     sleep(0.1)
-    println(frame)
+    #println(frame)
 end
 
