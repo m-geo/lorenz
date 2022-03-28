@@ -1,5 +1,5 @@
 
-function xdot(x,y,z; sigma=20)
+function xdot(x,y,z; sigma=10)
     return sigma*(y-x)
 end
 
@@ -24,20 +24,35 @@ function make_step(x,y,z; delta=0.01)
     return xn, yn, zn
 end
 
-# testing it out
-x, y, z = 0, 1, 0
-X, Y, Z = Float64[0,], Float64[1,], Float64[0,]
 
-for i in 1:3000
-    x,y,z = make_step(x,y,z)
-    push!(X, x)
-    push!(Y, y)
-    push!(Z, z)
+
+function run_sim(;runs=3000, count_z = false, thresh = 0.0)
+    x, y, z = 0, 1, 0
+    X, Y, Z = Float64[0,], Float64[1,], Float64[0,]
+    dist = fill(0,2)
+
+    for i in 1:runs
+        x,y,z = make_step(x,y,z)
+        push!(X, x)
+        push!(Y, y)
+        push!(Z, z)
+        if count_z
+            if z > thresh
+                dist[1] += 1
+            else
+                dist[2] += 1
+            end
+        end
+    end
+    return X, Y, Z, dist
 end
+
+X, Y, Z, dist = run_sim(;runs=5000, count_z = true, thresh = 24.7)
 
 using Plots
 Plots.plot(X,Y)
 Plots.plot(Z)
+Plots.histogram(Z;bins=100)
 
 
 function get_maxima(ls; add_min=false)

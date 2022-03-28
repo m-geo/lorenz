@@ -3,7 +3,7 @@ using GLMakie
 Base.@kwdef mutable struct Lorenz
     dt::Float64 = 0.01
     σ::Float64 = 10
-    ρ::Float64 = 18
+    ρ::Float64 = 28
     β::Float64 = 8/3
     x::Float64 = 1
     y::Float64 = 1
