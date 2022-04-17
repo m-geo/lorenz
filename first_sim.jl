@@ -3,7 +3,7 @@ function xdot(x,y,z; sigma=10)
     return sigma*(y-x)
 end
 
-function ydot(x,y,z; rho=28)
+function ydot(x,y,z; rho=48)
     return x*(rho-z)-y
 end
 
@@ -26,34 +26,47 @@ end
 
 
 
-function run_sim(;runs=3000, count_z = false, thresh = 0.0)
+function run_sim(;runs=3000, count_z = false, timing=false, thresh = 0.0)
     x, y, z = 0, 1, 0
     X, Y, Z = Float64[0,], Float64[1,], Float64[0,]
-    dist = fill(0,2)
+    #dist = fill(0,2)
+    cnt = 0
+    zless = true
+    cnt_list = Int[]
 
     for i in 1:runs
         x,y,z = make_step(x,y,z)
         push!(X, x)
         push!(Y, y)
         push!(Z, z)
-        if count_z
-            if z > thresh
-                dist[1] += 1
-            else
-                dist[2] += 1
-            end
+
+        if (z < thresh && zless) || (z > thresh && !zless)
+            cnt += 1
+        else
+            push!(cnt_list, cnt)
+            zless = !zless
+            cnt = 0
         end
+
+        # if count_z
+        #     if z > thresh
+        #         dist[1] += 1
+        #     else
+        #         dist[2] += 1
+        #     end
+        # end
     end
-    return X, Y, Z, dist
+    return X, Y, Z, cnt_list #,dist
 end
 
-X, Y, Z, dist = run_sim(;runs=5000, count_z = true, thresh = 24.7)
+X, Y, Z, times = run_sim(;runs=30000, timing=true, count_z = false, thresh = 24)
 
 using Plots
 Plots.plot(X,Y)
 Plots.plot(Z)
 Plots.histogram(Z;bins=100)
 
+Plots.histogram((times*0.01)[3:end],bins=20)
 
 function get_maxima(ls; add_min=false)
     maxs = Float64[]
