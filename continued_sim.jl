@@ -1,5 +1,8 @@
 using Statistics
 
+function show_full(array)
+    show(IOContext(stdout, :limit=>false), MIME"text/plain"(), array)
+end
 
 ## basic simulation functions
 function xdot(x,y,z; sigma=10)
@@ -25,7 +28,17 @@ function make_step(x,y,z; delta=0.01)
 end
 
 ## threshold functions
-function state_function(x,y,z)
+
+function threshold_basic(x,y,z)
+    # Z=24
+    out = 0
+    if z>24
+        out = 1
+    end
+    return out
+end
+
+function z_tercile_thresh(x,y,z)
     # states should be mutually exclusive
     # Z=18.3 and Z=32
     if z<18.3 #bottom 
@@ -37,23 +50,52 @@ function state_function(x,y,z)
     return 3 #top
 end
 
-function threshold_basic(x,y,z)
-    # Z=24
-    out = 0
-    if z>24
-        out = 1
+function eight_state_thresh(x,y,z)
+    state = [0,0,0]
+    if x > 0
+        state[1] = 1
     end
-    return out
+    if y > 0 
+        state[2] = 1
+    end
+    if z > 24
+        state[3] = 1
+    end
+    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
+                [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8)
+    return  map[state]
 end
 
+function twelve_state_quant_thresh(x,y,z)
+    #using 0.05, 0.95 quantiles for z
+    state = [0,0,0]
+    if x > 0
+        state[1] = 1
+    end
+    if y > 0 
+        state[2] = 1
+    end
+    if z > 37.9
+        state[3] = 2
+    elseif z > 10.6
+        state[3] = 1
+    end
+    # inefficient to be defining the map inside the function...
+    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
+    [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8,
+    [0,0,2] => 9, [1,0,2] => 10, [0,1,2] => 11, [1,1,2] => 12)
+    return map[state]
+end
+    
+
+
 ## simulation run
-function run_sim(;runs=3000, timing=false, thresh_func=state_function)
+function run_sim(;runs=3000, timing=false, thresh_func=z_tercile_thresh)
     x, y, z = 0, 1, 0
     X, Y, Z = Float64[0,], Float64[1,], Float64[0,]
     cnt = 0
-    #cnt_list = Tuple[]
-    state_list = []
-    holding_times = []
+    state_list = [] #list of unique states
+    holding_times = [] #list of holding times of each unique state
 
     state = thresh_func(x,y,z)
 
@@ -66,7 +108,6 @@ function run_sim(;runs=3000, timing=false, thresh_func=state_function)
         if thresh_func(x,y,z) == state
             cnt += 1
         else
-            #push!(cnt_list, (state, cnt, thresh_func(x,y,z))) #old state, time held, new state
             push!(state_list, state)
             push!(holding_times, cnt)
             state = thresh_func(x,y,z)
@@ -77,8 +118,8 @@ function run_sim(;runs=3000, timing=false, thresh_func=state_function)
     return X, Y, Z, state_list, holding_times
 end
 
-X, Y, Z, state_list, holding_times = run_sim(;runs=300000, timing=true, thresh_func=state_function)
-number_of_states = 3
+X, Y, Z, state_list, holding_times = run_sim(;runs=1000000, timing=true, thresh_func=twelve_state_quant_thresh)
+number_of_states = 12
 
 #basic plotting
 using Plots
@@ -86,49 +127,63 @@ Plots.plot(X,Y)
 Plots.plot(Z[100:end])
 Plots.histogram(Z;bins=100)
 
-#times is a list of 3-elem tuples
-#Plots.histogram([x[2]*0.01 for x in times[3:end] if x[1]==0],bins=20)
 
 #construct probability transition matrix directly
-constr_prob = zeros(number_of_states, number_of_states)
+function construct_p(number_of_states, state_list, holding_times)
+    constr_prob = zeros(number_of_states, number_of_states)
 
-for i in 1:length(state_list)-1
-    local current = state_list[i]
-    local next = state_list[i+1]
-    constr_prob[current, current] += holding_times[i]-1
-    constr_prob[next, current] += 1 #reconstruct full markov chain
+    for i in 1:length(state_list)-1
+        local current = state_list[i]
+        local next = state_list[i+1]
+        constr_prob[current, current] += holding_times[i]-1
+        constr_prob[next, current] += 1 #reconstruct full markov chain
+    end
+    norm = sum(constr_prob, dims=1) 
+
+    norm_constr_prob = constr_prob ./ norm
+    empirical_T = log(norm_constr_prob)/0.01
+    return (norm_constr_prob, empirical_T)
 end
-
-norm = sum(constr_prob, dims=1) 
-norm_constr_prob = constr_prob ./ norm
-# --> okay so this makes sense
+norm_constr_prob, empirical_T = construct_p(number_of_states, state_list, holding_times)
+show_full(norm_constr_prob)
+show_full(empirical_T)
 
 ## other method! 
-holding_time_dist = [[] for n in 1:number_of_states]
-constr_T = zeros(number_of_states, number_of_states)
+function construct_t(number_of_states, state_list, holding_times)
+    holding_time_dist = [[] for n in 1:number_of_states]
+    constr_T = zeros(number_of_states, number_of_states)
 
-#count number of times unique states appear
-for i in 1:length(state_list)-1 #for i in unique states #why is the -1??
-    local current = state_list[i]
-    local next = state_list[i+1]
-    constr_T[next, current] += 1 
-    push!(holding_time_dist[current], holding_times[i]*0.01)
+    #count number of times unique states appear
+    for i in 1:length(state_list)-1 #for i in unique states #why is the -1??
+        local current = state_list[i]
+        local next = state_list[i+1]
+        constr_T[next, current] += 1 
+        push!(holding_time_dist[current], holding_times[i]*0.01)
+    end
+
+    norm = sum(constr_T, dims=1)
+    norm_constr_T = constr_T ./ norm
+
+    holding_scale = 1 ./ mean.(holding_time_dist) 
+    for i in 1:number_of_states
+        norm_constr_T[i, i] = -1.0 #this is the bit I don't quite understand
+        norm_constr_T[:, i] *= holding_scale[i]
+    end
+
+    empirical_prob = exp(norm_constr_T * 0.01)
+    return (norm_constr_T, empirical_prob)
 end
 
-norm = sum(constr_T, dims=1)
-norm_constr_T = constr_T ./ norm
+norm_constr_T, empirical_prob = construct_t(number_of_states, state_list, holding_times)
+show_full(norm_constr_T)
+show_full(empirical_prob)
 
-holding_scale = 1 ./ mean.(holding_time_dist) 
-for i in 1:number_of_states
-    norm_constr_T[i, i] = -1.0
-    norm_constr_T[:, i] *= holding_scale[i]
-end
-empirical_constr_T = norm_constr_T #think about what this is
+`                                                           `
 
-empirical_prob = exp(empirical_constr_T * 0.01)
-
-# so this result feels correct ^^ (the other one doesn't)
-
+## identify quantiles in Z
+z_sort = copy(Z)
+three_state_extremes = quantile!(z_sort,[0.05, 0.95]) #output: [10.6, 37.9]
+five_state_extremes = quantile!(z_sort,[0.05, 0.25, 0.75, 0.95]) #output: [10.6, 16.9, 30.6, 37.9]
 
 
 ###################
