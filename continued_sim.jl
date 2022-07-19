@@ -2,149 +2,19 @@ using Statistics
 using DataFrames
 using Clustering
 using Polynomials
+using LinearAlgebra
+using Makie
+include("thresholds.jl")
+include("sim_utils.jl")
 
 function show_full(array)
     show(IOContext(stdout, :limit=>false), MIME"text/plain"(), array)
 end
 
-## basic simulation functions
-function xdot(x,y,z; sigma=10)
-    return sigma*(y-x)
-end
-function ydot(x,y,z; rho=28)
-    #print(rho)
-    return x*(rho-z)-y  ##notice how rho-z is the avg temperature gradient of sorts
-end
-function zdot(x,y,z; beta=8/3)
-    return x*y - beta*z
-end
-function make_step(x,y,z; rho = 28, delta=0.01)
-    #print(rho)
-    xp = x + xdot(x,y,z)*delta
-    yp = y + ydot(x,y,z; rho)*delta
-    zp = z + zdot(x,y,z)*delta
-
-    xn = x + 0.5*(xdot(x,y,z)+xdot(xp,yp,zp))*delta
-    yn = y + 0.5*(ydot(x,y,z; rho)+ydot(xp,yp,zp; rho))*delta
-    zn = z + 0.5*(zdot(x,y,z)+zdot(xp,yp,zp))*delta
-
-    return xn, yn, zn
-end
-##
-
-## threshold functions
-function threshold_basic(x,y,z)
-    # Z=24
-    out = 0
-    if z>24
-        out = 1
-    end
-    return out
-end
-function z_tercile_thresh(x,y,z)
-    # states should be mutually exclusive
-    # Z=18.3 and Z=32
-    if z<18.3 #bottom 
-        return 1
-    end
-    if z<32 #middle
-        return 2
-    end 
-    return 3 #top
-end
-function eight_state_thresh(x,y,z)
-    state = [0,0,0]
-    if x > 0
-        state[1] = 1
-    end
-    if y > 0 
-        state[2] = 1
-    end
-    if z > 24
-        state[3] = 1
-    end
-    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
-                [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8)
-    return  map[state]
-end
-function twelve_state_quant_thresh(x,y,z)
-    #using 0.05, 0.95 quantiles for z
-    state = [0,0,0]
-    if x > 0
-        state[1] = 1
-    end
-    if y > 0 
-        state[2] = 1
-    end
-    if z > 37.9
-        state[3] = 2
-    elseif z > 10.6
-        state[3] = 1
-    end
-    # inefficient to be defining the map inside the function...
-    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
-    [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8,
-    [0,0,2] => 9, [1,0,2] => 10, [0,1,2] => 11, [1,1,2] => 12)
-    return map[state]
-end
-function twelve_state_just_high(x,y,z)
-    #using 0.5, 0.95 quantiles for z
-    state = [0,0,0]
-    if x > 0
-        state[1] = 1
-    end
-    if y > 0 
-        state[2] = 1
-    end
-    if z > 37.9
-        state[3] = 2
-    elseif z > 22.5
-        state[3] = 1
-    end
-    # inefficient to be defining the map inside the function...
-    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
-                [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8,
-                [0,0,2] => 9, [1,0,2] => 10, [0,1,2] => 11, [1,1,2] => 12)
-    return map[state]
-end
-##  
-
-
-
-## simulation run
-function run_sim(;runs=3000, timing=false, thresh_func=z_tercile_thresh, delta_rho=0, rho_start=28)
-    x, y, z = 0, 1, 0
-    X, Y, Z = Float64[0,], Float64[1,], Float64[0,]
-    cnt = 0
-    state_list = [] #list of unique states
-    holding_times = [] #list of holding times of each unique state
-
-    state = thresh_func(x,y,z)
-    rho = rho_start
-    rho_step = delta_rho / runs
-
-    for i in 1:runs
-        #print(rho)
-        x,y,z = make_step(x,y,z; rho=rho)
-        push!(X, x)
-        push!(Y, y)
-        push!(Z, z)
-
-        if thresh_func(x,y,z) == state
-            cnt += 1
-        else
-            push!(state_list, state)
-            push!(holding_times, cnt)
-            state = thresh_func(x,y,z)
-            cnt = 0
-        end
-        rho += rho_step
-    end
-    return X, Y, Z, state_list, holding_times
-end
-
-X, Y, Z, state_list, holding_times = run_sim(;runs=1000000, timing=true, thresh_func=twelve_state_just_high, delta_rho=0, rho_start=28)
-number_of_states = 12
+#run simulation:
+X, Y, Z, state_list, holding_times = run_sim(;runs=1000000, timing=true, 
+                            thresh_func=twelve_state_just_high, delta_rho=20, rho_start=28)
+number_of_states = 8
 ##
 
 ## construct probability matrix directly
@@ -196,6 +66,9 @@ end
 norm_constr_prob, empirical_T = construct_p(number_of_states, state_list, holding_times, simple=false)
 show_full(norm_constr_prob)
 show_full(empirical_T)
+
+latexify(round.(norm_constr_prob, digits=3))
+
 ## construct transition matrix directly
 function construct_t(number_of_states, state_list, holding_times; simple=false)
     holding_time_dist = [[] for n in 1:number_of_states]
@@ -228,6 +101,8 @@ end
 norm_constr_T, empirical_prob = construct_t(number_of_states, state_list, holding_times)
 show_full(norm_constr_T)
 show_full(empirical_prob)
+
+latexify(round.(norm_constr_T, digits=3))
 ##
 
 
@@ -248,13 +123,12 @@ T_dict = get_T_dict()
 
 Plots.heatmap(T_dict[48], yflip=true, clim=(-80,80))
 
+latexify(round.(T_dict[32], digits=3))
 
-# list_of_first_elements = []
-# for i in T_list
-#     push!(list_of_first_elements, (i[1], i[2][1]))
-# end
-#Plots.scatter([x[1] for x in list_of_first_elements], [x[2] for x in list_of_first_elements])
+
 function get_elem_dict(T_dict; number_of_states=12, rho_range=range(28,step=4,stop=48))
+    #this is NOT the most elegant way to do it 
+    #better treat it not as a dict but as a 3d array so yuo can index it directly
     elem_dict = Dict()
     for i in range(1,number_of_states^2)
         for rho in rho_range
@@ -277,10 +151,128 @@ function get_lin_fit_matrix(elem_dict; number_of_states=12, rho_range=range(28,s
         lineq = Polynomials.polyfitA(rho_list, elem_dict[i],1)
         lin_fit_matrix[i] = lineq
     end
+    for i in range(1, number_of_states)
+        lin_fit_matrix[i,i] = 0.0
+    end
     return lin_fit_matrix
 end
 
 lin_fit_matrix = get_lin_fit_matrix(elem_dict; number_of_states)
+
+function fit_matrix(lin_fit_matrix, rho; number_of_states=12)
+    t_matrix = zeros(number_of_states,number_of_states)
+    #cnt = 0
+    for i in range(1, number_of_states^2)
+        #the entry is a function, so get func (rho)
+        try
+            t_matrix[i] = lin_fit_matrix[i](rho)
+        catch e
+            t_matrix[i] == 0.0
+            # cnt += 1
+        end
+    end
+    #print(cnt)
+    for j in range(1, number_of_states)
+        #set diagonal entries to the neg sum of column
+        t_matrix[j,j] = -sum(t_matrix[:,j])
+    end
+    return t_matrix
+end
+
+# to test the lin fits
+
+function test_fit(lin_fit_matrix; rho_range=(start=29,step=2,stop=47), number_of_states=12)
+    distance_array = []
+    for rho in rho_range
+        print(rho)
+        X, Y, Z, state_list, holding_times = run_sim(;runs=1000000, timing=true, 
+                    thresh_func=twelve_state_just_high, delta_rho=0, rho_start=rho)
+        norm_constr_T, empirical_prob = construct_t(number_of_states, state_list, holding_times)
+        fitted_matrix = fit_matrix(lin_fit_matrix, rho; number_of_states)
+        distance = LinearAlgebra.norm(norm_constr_T-fitted_matrix)/LinearAlgebra.norm(norm_constr_T)
+        push!(distance_array, distance)
+    end
+    return mean(distance_array)
+end
+
+### spectral bisection
+#1 construct adjacency matrix
+function get_distance_matrix(points)
+    size = length(points)
+    distance_matrix = Array{Any, 2}(nothing, (size, size))
+    for i in range(1, size)
+        for j in range(i, size)
+            distance_matrix[i,j] = LinearAlgebra.norm(points[i]-points[j])
+            distance_matrix[j,i] = LinearAlgebra.norm(points[i]-points[j])
+        end
+    end
+    return distance_matrix
+end
+
+# get skipped points from run
+function get_sample_points(X, Y, Z)
+    points = []
+    # size = length(X)
+    # print(size)
+    for i in range(start=10, stop=30000, step=100) #cut off beginning errata
+        #print(i)
+        #push!(points,[X[Int(i)],Y[Int(i)],Z[Int(i)]])
+        push!(points,[X[i],Y[i],Z[i]])
+    end
+    return points
+end
+
+function get_graph_lap(distance_matrix)
+    thresh = quantile(distance_matrix[:], 0.5) #use the median as a threshold
+    adj_mat = I - (distance_matrix .< thresh) #line borrowed from andre
+    graph_lap = adj_mat - Diagonal(sum(adj_mat, dims = 1)[:])
+    return graph_lap
+end
+
+sample_points = get_sample_points(X, Y, Z)
+distance_matrix = get_distance_matrix(sample_points)
+graph_lap = get_graph_lap(distance_matrix)
+
+Λ, V = eigen(graph_lap)
+
+function get_bisection_indices(V, index; thresh=0)
+    bisection_indices = V[:, index] .> thresh
+    return bisection_indices
+end
+
+function get_partition(V, points; thresh=0)
+    #for now, just the one where we use 2,3,4
+    list_2 = get_bisection_indices(V, 2, thresh=thresh)
+    list_3 = get_bisection_indices(V, 3, thresh=thresh)
+    list_4 = get_bisection_indices(V, 4, thresh=thresh)
+
+    cluster_dict = Dict()
+    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
+                [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8)
+
+    for i in range(1,length(points))
+        cluster_number = map[[list_2[i], list_3[i], list_4[i]]]
+        try
+            cluster_dict[cluster_number] = [cluster_dict[cluster_number] points[i]]
+        catch 
+            cluster_dict[cluster_number] = points[i]
+        end
+    end
+    # show_full(cluster_dict[1])
+    # show_full(mean(cluster_dict[1], dims=2))
+    out = Dict()
+    for i in range(1,8) #once again, not general!
+        elements = cluster_dict[i]
+        out[i] = vec(mean(elements,dims=2)) #centroid location
+    end
+    return out
+end
+
+partition_dict = get_partition(V, sample_points)
+
+#next step: plot the locations, relative to the butterfly
+
+Plots.plot(Tuple.(sample_points))
 
 
 
@@ -299,51 +291,3 @@ Plots.plot(X,Y)
 Plots.plot(Z[100:end])
 Plots.histogram(Z;bins=100)
 ##
-
-function get_maxima(ls; add_min=false)
-    maxs = Float64[]
-    if add_min
-        mins = Float64[]
-        if ls[1]<ls[2]
-            push!(mins,ls[1])
-        end
-    end
-    if ls[1]>ls[2]
-        push!(maxs,ls[1])
-    end
-    for i=2:length(ls)-1
-        if ls[i-1]<ls[i]>ls[i+1]
-            push!(maxs,ls[i])
-        end
-        if add_min
-            if ls[i-1]>ls[i]<ls[i+1]
-                push!(mins,ls[i])
-            end
-        end
-    end
-    if ls[end]>ls[end-1]
-        push!(maxs,ls[end])
-    end
-    if add_min
-        if ls[end]<ls[end-1]
-            push!(mins,ls[end])
-        end
-        return maxs, mins
-    else
-        return maxs
-    end
-end
-
-# get subsequent maxima  "tent" plot
-z_max = get_maxima(Z)
-z_plot = Tuple{Float64, Float64}[]
-for i=1:length(z_max)-1
-    push!(z_plot,(z_max[i], z_max[i+1]))
-end
-i1 = [x[1] for x in z_plot]
-i2 = [x[2] for x in z_plot]
-Plots.scatter(i1,i2)
-
-# get sequential max/min plot
-z_max, z_min = get_maxima(Z, add_min=true)
-Plots.scatter(z_max, z_min)
