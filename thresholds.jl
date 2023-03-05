@@ -54,7 +54,7 @@ function twelve_state_quant_thresh(x,y,z)
     [0,0,2] => 9, [1,0,2] => 10, [0,1,2] => 11, [1,1,2] => 12)
     return map[state]
 end
-function twelve_state_just_high(x,y,z)
+function twelve_state_just_high(x,y,z; mid=22.5, high=37.9)
     #using 0.5, 0.95 quantiles for z
     state = [0,0,0]
     if x > 0
@@ -63,9 +63,30 @@ function twelve_state_just_high(x,y,z)
     if y > 0 
         state[2] = 1
     end
-    if z > 37.9
+    if z > high
         state[3] = 2
-    elseif z > 22.5
+    elseif z > mid
+        state[3] = 1
+    end
+    # inefficient to be defining the map inside the function...
+    map = Dict([0,0,0] => 1, [1,0,0] => 2, [0,1,0] => 3, [1,1,0] => 4,
+                [0,0,1] => 5, [1,0,1] => 6, [0,1,1] => 7, [1,1,1] => 8,
+                [0,0,2] => 9, [1,0,2] => 10, [0,1,2] => 11, [1,1,2] => 12)
+    return map[state]
+end
+
+function twelve_state_26(x,y,z)
+    #using 0.5, 0.95 quantiles for z
+    state = [0,0,0]
+    if x > 0
+        state[1] = 1
+    end
+    if y > 0 
+        state[2] = 1
+    end
+    if z > 35.4
+        state[3] = 2
+    elseif z > 20.4
         state[3] = 1
     end
     # inefficient to be defining the map inside the function...
@@ -76,14 +97,14 @@ function twelve_state_just_high(x,y,z)
 end
 
 function spectral_thresh(x,y,z)
-    centroids = Dict(  5 => [9.98259, 13.3079, 23.0984],
-                        4 => [-11.6608, -12.1595, 29.5316],
-                        6 => [3.54258, 5.51565, 16.788],
-                        7 => [14.288, 11.9913, 36.8665],
-                        2 => [-3.35442, -3.47187, 22.2316],
-                        8 => [-17.0136, -20.4666, 35.5536],
-                        3 => [12.6386, 4.59547, 39.5217],
-                        1 => [7.58452, 0.825746, 33.1679])
+    centroids = Dict(      5 => [15.7328, 16.7556, 35.9377],
+    4 => [3.43148, 2.73087, 24.7724],
+    6 => [-5.51011, -5.539, 22.685],
+    7 => [14.7184, 8.44782, 40.7711],
+    2 => [2.94363, 5.61358, 17.6816],
+    8 => [1.4769, -2.17442, 30.9628],
+    3 => [10.1125, 9.07715, 29.8761],
+    1 => [8.07909, 13.3689, 17.2107])
     min_dist = Inf64
     min_i = 0
     for i in range(1,8)
