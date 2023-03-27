@@ -174,3 +174,9 @@ function construct_t(number_of_states, state_list, holding_times; simple=false)
         return (norm_constr_T, empirical_prob)
     end
 end
+
+function steady_state(T_matrix; number_of_states=12)
+    Λ, V = eigen(T_matrix)
+    vec = V[:,number_of_states] 
+    return vec./sum(vec)
+end

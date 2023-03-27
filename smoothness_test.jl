@@ -2,24 +2,26 @@ using Statistics
 using LinearAlgebra
 # using Plots
 using CairoMakie
-using Latexify
+# using Latexify
 using MarkovChainHammer.TransitionMatrix: perron_frobenius, generator, holding_times
+using MarkovChainHammer.BayesianMatrix
 using JLD
+using Distributions
 # using ColorSchemes
-using HypothesisTests
+# using HypothesisTests
 
 include("thresholds.jl")
 include("sim_utils.jl")
 
 dt = 0.01
 
-static_generators = Dict()
-for rho in 26:1:32
-    sim_list, markov_chain = new_run_sim(;runs=1e7, timing=true, 
-        thresh_func=twelve_state_just_high, delta_rho=0, rho_start=rho) 
-    gen = generator(markov_chain, 12; dt=0.01)
-    static_generators[rho] = gen
-end
+# static_generators = Dict()
+# for rho in 26:1:32
+#     sim_list, markov_chain = new_run_sim(;runs=1e7, timing=true, 
+#         thresh_func=twelve_state_just_high, delta_rho=0, rho_start=rho) 
+#     gen = generator(markov_chain, 12; dt=0.01)
+#     static_generators[rho] = gen
+# end
 
 # for rho in 27.5:1:30.5
 #     sim_list, markov_chain = new_run_sim(;runs=1e7, timing=true, 
@@ -29,11 +31,15 @@ end
 # end
 
 # JLD.save("static_generators_extra.jld",  "static_generators", static_generators)
+static_generators = JLD.load("./vars/static_generators.jld", "static_generators")
 
 
-sim_list_delta, markov_chain_delta = new_run_sim(;runs=10000, timing=true, 
-                            thresh_func=twelve_state_just_high, delta_rho=2, rho_start=26)
-#
+sim_list_delta, markov_chain_delta = new_run_sim(;runs=100000, timing=true, 
+                            thresh_func=twelve_state_just_high, delta_rho=0, rho_start=26)
+
+perron_frobenius(markov_chain_delta; step=10)
+
+###
 function generate_change(rho_start, delta_rho)
     changing_generators = []
     changing_mcs = []
@@ -108,17 +114,18 @@ function sliding_window(window_size, rho_start, rho_end; runs=1e6, dt=0.01)
     return changing_generators, changing_mcs#, middle_values
 end
 
+middle_values = [27,28,29,30,31]
+
 sliding_gens, sliding_mcs = sliding_window(2, 26, 32)
 sliding_bayesians = [BayesianGenerator(mc; dt=dt) for mc in sliding_mcs]
 sliding_reference = [static_generators[x] for x in middle_values]
 
-sl_gen_e5, sl_mc_e5, middle_values = sliding_window(2, 26, 32; runs=1e5)
+sl_gen_e5, sl_mc_e5 = sliding_window(2, 26, 32; runs=1e5)
 sl_bayesian_e5 = [BayesianGenerator(mc; dt=dt) for mc in sl_mc_e5]
 
-sl_gen_e4, sl_mc_e4, middle_values = sliding_window(2, 26, 32; runs=1e4)
+sl_gen_e4, sl_mc_e4 = sliding_window(2, 26, 32; runs=1e4)
 sl_bayesian_e4 = [BayesianGenerator(mc; dt=dt) for mc in sl_mc_e4]
 
-middle_values = [27,28,29,30,31]
 
 function plot_sliding_window(list_of_bayesians, ref_list; e5_list=nothing, e4_list=nothing, lims=nothing)
     fig = Figure(resolution=(3200,1200))
@@ -157,33 +164,44 @@ plot_sliding_window(sliding_bayesians, sliding_reference; e5_list=sl_bayesian_e5
 
 
 # 
-function kl_div(p, q)
+function kl_div(p, q; significance=nothing)
+    # for significance: integer indicating factor of sigma difference
     s1 = std(p)
     s2 = std(q)
     m1 = mean(p)
     m2 = mean(q)
-    return log.(s1./s2) .+ (s1.^2 .+ (m1.-m2).^2)./(2 .* s2.^2) .- 0.5
+    metric = log.(s1./s2) .+ (s1.^2 .+ (m1.-m2).^2)./(2 .* s2.^2) .- 0.5
+    if significance === nothing
+        return metric
+    else
+        thresh =  log.(s1./s2) .+ (s1.^2 .+ (significance .* s1).^2)./(2 .* s2.^2) .- 0.5
+        return metric .>= thresh
+    end
 end
 
 kl_div(sliding_bayesians[1], sliding_bayesians[2])
 
-function get_metrics(arg_list; test=kl_div) 
+function get_metrics(arg_list; significance=nothing) 
     lists = [[] for _ in 1:length(arg_list)]
+    signif = [[] for _ in 1:length(arg_list)]
     u = 0
     for bayesian_list in arg_list
         u += 1
         for dist in bayesian_list[2:end]
-            # metric = kl_div(bayesian_list[1], dist)
-            metric = test(dist, bayesian_list[1])
+            metric = kl_div(bayesian_list[1], dist)
             push!(lists[u], metric)
+            if significance !== nothing
+                sig = kl_div(bayesian_list[1], dist; significance=significance)
+                push!(signif[u], sig)
+            end
         end
     end
-    return lists
+    return lists, signif
 end
 
-metrics = get_metrics((sliding_bayesians, sl_bayesian_e5, sl_bayesian_e4))#; test=HypothesisTests.ApproximateTwoSampleKSTest)
+metrics, metrics_sig = get_metrics((sliding_bayesians, sl_bayesian_e5, sl_bayesian_e4); significance=2)
 
-function plot_kl(metrics)
+function plot_kl(metrics; metrics_sig)
     fig = Figure(resolution=(3200,1200))
     colors = ["red", "orange", "green", "blue", "violet"]
     labels = ["1e6", "1e5", "1e4"]
@@ -194,10 +212,20 @@ function plot_kl(metrics)
         for list_no in eachindex(metrics) #iterate 1e6 through 1e4
             #all same color + label
             tmp = Float64[]
+            tmp_sig = Float64[]
+            marker_shapes = []
             for k in 1:4
                 push!(tmp, metrics[list_no][k][box,box])
+                # push!(tmp, metrics_sig[list_no][k][box,box]) #condition this!!!
+                if metrics_sig[list_no][k][box,box] 
+                    push!(marker_shapes, :circle) #o
+                else
+                    push!(marker_shapes, :diamond) #s
+                end
             end
-            scatter!(xs, tmp, color=colors[list_no])
+            # marker_shapes = [tmp_sig[i] ? 'o' : 's' for i in 1:length(tmp_sig)]
+            # print(marker_shapes)
+            scatter!(xs, tmp, color=(colors[list_no], 0.5), marker=marker_shapes, markersize=20)
             lines!(xs, tmp, color=colors[list_no], label=labels[list_no])
         end
         axislegend(ax, position=:lt)
@@ -206,4 +234,50 @@ function plot_kl(metrics)
 end
             
 
-plot_kl(metrics)
+plot_kl(metrics; metrics_sig)
+
+
+####### off-diagonal entries
+
+function plot_sliding_off_diag(list_of_bayesians, ref_list; e5_list=nothing, e4_list=nothing, lims=nothing)
+    fig = Figure(resolution=(1200,400))
+    colors = ["red", "orange", "green", "blue", "violet"]
+    labels = [27, 28, 29, 30, 31]
+    box_list = [(5,9), (8,12), (9,11)]
+    for n in eachindex(box_list)
+        i, j = box_list[n]
+        ax = Axis(fig[1,n], title="$i -> $j")
+        # vlines!(ax, [Q[i, j] for Q in ref_list])
+
+        for k in 1:5 #generalize!?
+            gen = list_of_bayesians[k]
+            alpha_j = gen.posterior.exit_probabilities[i].alpha[j-1] #j-1 only works if looking at transitions into later states!
+            alpha_0 = sum(gen.posterior.exit_probabilities[i].alpha)
+            dist = Distributions.Beta(alpha_j, alpha_0 - alpha_j)
+            plot!(dist, label="$(labels[k])", color=colors[k])
+            if e5_list !== nothing
+                gen = e5_list[k]
+                alpha_j = gen.posterior.exit_probabilities[i].alpha[j-1] #j-1 only works if looking at transitions into later states!
+                alpha_0 = sum(gen.posterior.exit_probabilities[i].alpha)
+                dist = Distributions.Beta(alpha_j, alpha_0 - alpha_j)
+                plot!(dist,  color=colors[k], linestyle=:dash)
+            end
+            if e4_list !== nothing
+                gen = e4_list[k]
+                alpha_j = gen.posterior.exit_probabilities[i].alpha[j-1] #j-1 only works if looking at transitions into later states!
+                alpha_0 = sum(gen.posterior.exit_probabilities[i].alpha)
+                dist = Distributions.Beta(alpha_j, alpha_0 - alpha_j)
+                plot!(dist,  color=colors[k], linestyle=:dashdot)
+            end
+        end
+        
+        if lims !== nothing
+            xlims!(lims[n][1],lims[n][2])
+        end
+        axislegend(ax)
+    end
+    fig
+end
+
+# lims = [(0,0.75),(0,30),(0,30)]
+plot_sliding_off_diag(sliding_bayesians, sliding_reference; e5_list=sl_bayesian_e5, e4_list=sl_bayesian_e4)#, lims=lims)

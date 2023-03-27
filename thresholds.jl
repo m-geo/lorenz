@@ -11,10 +11,10 @@ end
 function z_tercile_thresh(x,y,z)
     # states should be mutually exclusive
     # Z=18.3 and Z=32
-    if z<18.3 #bottom 
+    if z<10.6 #bottom 
         return 1
     end
-    if z<32 #middle
+    if z<37.9 #middle
         return 2
     end 
     return 3 #top

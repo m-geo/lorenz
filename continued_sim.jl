@@ -49,12 +49,6 @@ latexify(round.(norm_constr_T, digits=3))
 latexify(round.(empirical_prob, digits=3))
 ##
 
-function steady_state(T_matrix; number_of_states=12)
-    Λ, V = eigen(T_matrix)
-    vec = V[:,number_of_states] 
-    return vec./sum(vec)
-end
-
 ss = steady_state(norm_constr_T, number_of_states=number_of_states)
 
 round.(real.(ss), digits=3)

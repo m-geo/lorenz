@@ -56,7 +56,7 @@ iterations = 100000
 # grab first markov state
 # note: replace the below thing with the appropriate "assignment" function 
 # markov_index = assignment(initial_condition)
-markov_index = twelve_state_just_high(initial_condition[1], initial_condition[2], initial_condition[3])
+markov_index = z_tercile_thresh(initial_condition[1], initial_condition[2], initial_condition[3]) #this is the line to change!
 push!(markov_chain, markov_index)
 
 # grab the rest
@@ -65,7 +65,7 @@ for i in ProgressBar(2:iterations)
     push!(timeseries, state)
     # partition state space according to most similar markov state
     # markov_index = assignment(state)
-    markov_index = twelve_state_just_high(state[1], state[2], state[3])
+    markov_index = z_tercile_thresh(state[1], state[2], state[3]) # also this one!
     push!(markov_chain, markov_index)
 end
 
@@ -73,7 +73,8 @@ end
 colors = []
 # non-custom, see https://docs.juliaplots.org/latest/generated/colorschemes/
 # color_choices = cgrad(:rainbow, 12, categorical=true) # 12 is the number of states
-color_choices = [:yellow, :darkgrey, :lightgrey, :pink ,:blue, :lightblue, :lightgreen, :green ,:red, :magenta , :purple, :orange]
+# color_choices = [:yellow, :darkgrey, :lightgrey, :pink ,:blue, :lightblue, :lightgreen, :green ,:red, :magenta , :purple, :orange]
+color_choices = [:red, :yellow, :blue]
 # custom 
 # color_choices = [RGBAf(1, 0, 0), RGBAf(0, 0, 1), RGBAf(1, 1, 0)]
 # color_choices = [color_choices..., RGBAf(0, 1, 0), RGBAf(1, 0, 1), RGBAf(0, 1, 1)]
@@ -83,13 +84,13 @@ for i in eachindex(timeseries)
     push!(colors, color_choices[markov_chain[i]])
 end
 
-for i in eachindex(sim_list)
-    push!(colors, color_choices[mc_chain[i]])
-end
+# for i in eachindex(sim_list)                          #if using with my own sim_list syntax
+#     push!(colors, color_choices[mc_chain[i]])
+# end
 
 tuple_timeseries = Tuple.(timeseries)
 
-tuple_timeseries = Tuple.(sim_list)
+# tuple_timeseries = Tuple.(sim_list)
 
 # everything is done for plotting
 fig = Figure(resolution=(1000, 700))
