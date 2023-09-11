@@ -1,3 +1,5 @@
+using Polynomials
+
 ### explore fitting function to T matrix
 function get_T_dict(;runs=1000000, thresh_func=twelve_state_just_high, number_of_states=12, 
                     rho_range=range(28,step=4,stop=48))
@@ -38,7 +40,7 @@ function get_elem_dict(T_dict; number_of_states=12, rho_range=range(28,step=4,st
     return elem_dict
 end
 
-elem_dict = get_elem_dict(T_dict)
+elem_dict = get_elem_dict(static_generators; rho_range=range(26,step=1,stop=32))
 
 function get_lin_fit_matrix(elem_dict; number_of_states=12, rho_range=range(28,step=4,stop=48))
     # using the elementwise dictionary, generate a matrix of linear fit polynomials
@@ -54,7 +56,7 @@ function get_lin_fit_matrix(elem_dict; number_of_states=12, rho_range=range(28,s
     return lin_fit_matrix
 end
 
-lin_fit_matrix = get_lin_fit_matrix(elem_dict; number_of_states=12)
+lin_fit_matrix = get_lin_fit_matrix(elem_dict; number_of_states=12,  rho_range=range(26,step=1,stop=32))
 
 function fit_matrix(lin_fit_matrix, rho; number_of_states=12)
     t_matrix = zeros(number_of_states,number_of_states)
@@ -94,3 +96,93 @@ function test_fit(lin_fit_matrix; rho_range=range(start=29,step=2,stop=47), numb
 end
 
 distance_array = test_fit(lin_fit_matrix)       # mean is 0.33
+
+
+# ---------- new ---------
+static_generators = JLD.load("./vars/static_generators.jld", "static_generators")
+further_generators = JLD.load("./vars/further_generators.jld", "further_generators")
+
+static_means = JLD.load("./vars/bayesian_static_means.jld",  "bayesian_static_means")
+static_stds = JLD.load("./vars/bayesian_static_stds.jld",  "bayesian_static_stds")
+
+function plot_diagonals(generator_dict, static_means, static_stds; extension_dict=nothing, sliding_windows=nothing, middle_values=nothing, bayesian_delta=nothing)
+    ref_list = [x for x in 26:32]
+    if extension_dict !== nothing
+        max_rho = 36
+
+        full_ref_list = [x for x in 26:36]
+
+    else
+        max_rho=32
+    end
+
+
+    fig = Figure(resolution=(1600,1200))
+    for i in 1:3, j in 1:4
+        box = j+4*(i-1) 
+        ax = Axis(fig[i,j], title="$box")
+        entry_list = [generator_dict[rho][box,box] for rho in ref_list]
+
+        mean_list = [] # this is sooo not general
+        std_list = []
+        for rho in 26:1:max_rho
+            push!(mean_list, static_means[rho][box, box])
+            push!(std_list, static_stds[rho][box, box])
+        end
+
+        f1 = [Polynomials.fit(ref_list, entry_list, 1)[i] for i in 0:1]
+        f2 = [Polynomials.fit(ref_list, entry_list, 2)[i] for i in 0:2]
+
+        if extension_dict !== nothing
+            for rho in 33:36
+                push!(entry_list, extension_dict[rho][box,box])
+            end
+            scatter!(full_ref_list, entry_list)
+            errorbars!(full_ref_list, mean_list, std_list)
+            xs = full_ref_list[1]:0.1:full_ref_list[end]
+            lines!(xs, [f1[1]+f1[2]*x for x in xs])
+            lines!(xs, [f2[1]+f2[2]*x+f2[3]*x^2 for x in xs])
+        else
+            scatter!(ref_list, entry_list)
+        end
+
+        if sliding_windows !== nothing
+            sliding_means = [mean(sliding_windows[i])[box, box] for i in 1:1:5]
+            sliding_stds = [std(sliding_windows[i])[box, box] for i in 1:1:5]
+            errorbars!(middle_values, sliding_means, sliding_stds, color="red")
+            scatter!(middle_values, sliding_means, color="red")
+        end
+
+        if bayesian_delta !== nothing
+            scatter!(29, mean(bayesian_delta)[box,box],color="blue")
+            errorbars!([29], [mean(bayesian_delta)[box,box]], [std(bayesian_delta)[box,box]], color="blue")
+        end
+
+    end
+    fig
+end
+
+#inputs here taken from smoothness_test.jl
+
+sim_list_delta, markov_chain_delta = new_run_sim(;runs=1e6, timing=true, 
+                            thresh_func=twelve_state_just_high, delta_rho=6, rho_start=26)
+
+bayesian_delta = BayesianGenerator(markov_chain_delta; dt=dt)
+
+plot_diagonals(static_generators, static_means, static_stds; #extension_dict=further_generators, 
+    sliding_windows=sliding_bayesians, middle_values=middle_values, bayesian_delta=bayesian_delta)
+
+function plot_transitions(generator_dict)
+    ref_list = [x for x in 26:32]
+    fig = Figure(resolution=(800,400))
+    box_list = [(5,9), (8,12)]
+    for n in eachindex(box_list)
+        i, j = box_list[n]
+        ax = Axis(fig[1,n], title="$i -> $j")
+        entry_list = [generator_dict[rho][j,i] for rho in ref_list] #note j and i flipped
+        scatter!(ref_list, entry_list)
+    end
+    fig
+end
+
+plot_transitions(static_generators)

@@ -8,8 +8,10 @@ include("thresholds.jl")
 include("sim_utils.jl")
 
 sim_list28, markov_chain28 = new_run_sim(;runs=100000, timing=true, 
-        thresh_func=twelve_state_just_high, delta_rho=0, rho_start=28)  
+        thresh_func=twelve_state_just_high, delta_rho=0, rho_start=28, init=(20,-30,100))  
 #
+show_full(generator(markov_chain28; dt=0.01))
+
 generator28 = generator(markov_chain28, 12; dt=0.01)
 pf28 = perron_frobenius(markov_chain28, 12)
 

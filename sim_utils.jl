@@ -21,6 +21,13 @@ function make_step(x,y,z; rho = 28, delta=0.01)
 
     return xn, yn, zn
 end
+
+# function step(x, ρ, Δt)
+#     xp = x + lorenz(x, ρ)*Δt
+#     return x + 0.5*(lorenz(x, ρ) + lorenz(xp, ρ))*Δt
+# end
+
+
 ##
 
 function show_full(array)
@@ -61,9 +68,9 @@ end
 
 ##
 
-function new_run_sim(;runs=3000, timing=false, thresh_func=z_tercile_thresh, delta_rho=0, rho_start=28)
-    x, y, z = 14.0, 20.0, 27.0
-    X, Y, Z = Float64[0,], Float64[1,], Float64[0,]
+function new_run_sim(;runs=3000, timing=false, thresh_func=z_tercile_thresh, delta_rho=0, rho_start=28, init=(14.0,20.0,27.0))
+    x, y, z = init
+    X, Y, Z = Float64[x,], Float64[y,], Float64[z,]
     cnt = 0
     state_list = [] #list of unique states
     holding_times = [] #list of holding times of each unique state
@@ -177,6 +184,6 @@ end
 
 function steady_state(T_matrix; number_of_states=12)
     Λ, V = eigen(T_matrix)
-    vec = V[:,number_of_states] 
+    vec = V[:,number_of_states] # last column
     return vec./sum(vec)
 end

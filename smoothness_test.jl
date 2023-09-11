@@ -30,8 +30,42 @@ dt = 0.01
 #     static_generators[rho] = gen
 # end
 
+# further_generators = Dict()
+# for rho in 33:1:36
+#     sim_list, markov_chain = new_run_sim(;runs=1e7, timing=true, 
+#         thresh_func=twelve_state_just_high, delta_rho=0, rho_start=rho) 
+#     gen = generator(markov_chain, 12; dt=0.01)
+#     further_generators[rho] = gen
+# end
+
+# JLD.save("./vars/further_generators.jld",  "further_generators", further_generators)
 # JLD.save("static_generators_extra.jld",  "static_generators", static_generators)
 static_generators = JLD.load("./vars/static_generators.jld", "static_generators")
+
+
+##########
+
+# bayesian_static_generators = Dict()
+# for rho in 26:1:36
+#     println("starting rho=$rho")
+#     sim_list, markov_chain = new_run_sim(;runs=1e7, timing=true, 
+#         thresh_func=twelve_state_just_high, delta_rho=0, rho_start=rho) 
+#     gen = BayesianGenerator(markov_chain; dt=0.01)
+#     bayesian_static_generators[rho] = gen
+# end
+
+
+# static_means = Dict()
+# static_stds = Dict()
+# for rho in 26:1:36
+#     Q_bayes = bayesian_static_generators[rho]
+#     static_means[rho] = mean(Q_bayes)
+#     static_stds[rho] = std(Q_bayes)
+# end
+# JLD.save("./vars/bayesian_static_means.jld",  "bayesian_static_means", static_means)
+# JLD.save("./vars/bayesian_static_stds.jld",  "bayesian_static_stds", static_stds)
+
+# bayesian_static_generators = JLD.load("./vars/bayesian_static_generators.jld", "bayesian_static_generators")
 
 
 sim_list_delta, markov_chain_delta = new_run_sim(;runs=100000, timing=true, 
@@ -41,9 +75,10 @@ perron_frobenius(markov_chain_delta; step=10)
 
 ###
 function generate_change(rho_start, delta_rho)
+    # 
     changing_generators = []
     changing_mcs = []
-    for i in 4:1:7
+    for i in 4:1:7 #iterate through degree of runs
         sim_list, markov_chain = new_run_sim(;runs=10^i, timing=true, 
         thresh_func=twelve_state_just_high, delta_rho=delta_rho, rho_start=rho_start)
         gen = generator(markov_chain,12; dt=dt)
@@ -97,6 +132,9 @@ end
 
 plot_rates_comparison(bayesian_generators, bayesians_31, static_generators[27], static_generators[31])
 
+
+### this is where we actually start?
+
 function sliding_window(window_size, rho_start, rho_end; runs=1e6, dt=0.01)
     changing_generators = []
     changing_mcs = []
@@ -119,6 +157,8 @@ middle_values = [27,28,29,30,31]
 sliding_gens, sliding_mcs = sliding_window(2, 26, 32)
 sliding_bayesians = [BayesianGenerator(mc; dt=dt) for mc in sliding_mcs]
 sliding_reference = [static_generators[x] for x in middle_values]
+
+#slidigng bayesians is a list of bayesian generators for each of the windows (5 total)
 
 sl_gen_e5, sl_mc_e5 = sliding_window(2, 26, 32; runs=1e5)
 sl_bayesian_e5 = [BayesianGenerator(mc; dt=dt) for mc in sl_mc_e5]
@@ -188,7 +228,7 @@ function get_metrics(arg_list; significance=nothing)
     for bayesian_list in arg_list
         u += 1
         for dist in bayesian_list[2:end]
-            metric = kl_div(bayesian_list[1], dist)
+            metric = kl_div(bayesian_list[1], dist) #first the reference, then one under question
             push!(lists[u], metric)
             if significance !== nothing
                 sig = kl_div(bayesian_list[1], dist; significance=significance)
@@ -233,17 +273,16 @@ function plot_kl(metrics; metrics_sig)
     fig
 end
             
-
 plot_kl(metrics; metrics_sig)
 
 
 ####### off-diagonal entries
 
 function plot_sliding_off_diag(list_of_bayesians, ref_list; e5_list=nothing, e4_list=nothing, lims=nothing)
-    fig = Figure(resolution=(1200,400))
+    fig = Figure(resolution=(800,400))
     colors = ["red", "orange", "green", "blue", "violet"]
     labels = [27, 28, 29, 30, 31]
-    box_list = [(5,9), (8,12), (9,11)]
+    box_list = [(5,9), (8,12)]
     for n in eachindex(box_list)
         i, j = box_list[n]
         ax = Axis(fig[1,n], title="$i -> $j")
@@ -265,7 +304,7 @@ function plot_sliding_off_diag(list_of_bayesians, ref_list; e5_list=nothing, e4_
             if e4_list !== nothing
                 gen = e4_list[k]
                 alpha_j = gen.posterior.exit_probabilities[i].alpha[j-1] #j-1 only works if looking at transitions into later states!
-                alpha_0 = sum(gen.posterior.exit_probabilities[i].alpha)
+                alpha_0 = sum(gen.posterior.exit_probabilities[i].alpha) #double check that ? ^ like. i vs j.
                 dist = Distributions.Beta(alpha_j, alpha_0 - alpha_j)
                 plot!(dist,  color=colors[k], linestyle=:dashdot)
             end
